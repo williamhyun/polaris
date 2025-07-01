@@ -18,63 +18,45 @@
  */
 package org.apache.polaris.delegation.api.model;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.constraints.NotNull;
-import java.util.Map;
-import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
- * Operation-specific parameters for delegation tasks.
+ * Base class for operation-specific parameters in delegation tasks.
  *
- * <p>Contains parameters specific to the type of operation being performed, such as table identity
- * for purge operations and operational properties.
+ * <p>This abstract class serves as the base for all operation-specific parameter types. Each
+ * concrete subclass represents parameters for a specific type of delegation operation, providing
+ * type safety and clear separation of concerns.
+ *
+ * <p>Uses Jackson polymorphism to serialize/deserialize different parameter types based on the
+ * operation type. This allows the API to handle different parameter structures while maintaining
+ * type safety.
+ *
+ * <p><strong>Supported Operation Types:</strong>
+ *
+ * <ul>
+ *   <li>{@link TablePurgeParameters} - For TABLE_PURGE operations
+ * </ul>
+ *
+ * <p><strong>Adding New Operation Types:</strong>
+ *
+ * <ol>
+ *   <li>Create a new concrete subclass extending {@code OperationParameters}
+ *   <li>Add the subclass to the {@link JsonSubTypes} annotation
+ *   <li>Define the operation-specific fields and validation
+ * </ol>
  */
-public class OperationParameters {
+@JsonTypeInfo(
+    use = JsonTypeInfo.Id.NAME,
+    include = JsonTypeInfo.As.PROPERTY,
+    property = "task_type")
+@JsonSubTypes({@JsonSubTypes.Type(value = TablePurgeParameters.class, name = "PURGE_TABLE")})
+public abstract class OperationParameters {
 
-  @NotNull private final TableIdentity tableIdentity;
-
-  private final Map<String, String> properties;
-
-  @JsonCreator
-  public OperationParameters(
-      @JsonProperty("table_identity") @NotNull TableIdentity tableIdentity,
-      @JsonProperty("properties") Map<String, String> properties) {
-    this.tableIdentity = tableIdentity;
-    this.properties = properties;
-  }
-
-  @JsonProperty("table_identity")
-  public TableIdentity getTableIdentity() {
-    return tableIdentity;
-  }
-
-  @JsonProperty("properties")
-  public Map<String, String> getProperties() {
-    return properties;
-  }
-
-  @Override
-  public boolean equals(Object o) {
-    if (this == o) return true;
-    if (o == null || getClass() != o.getClass()) return false;
-    OperationParameters that = (OperationParameters) o;
-    return Objects.equals(tableIdentity, that.tableIdentity)
-        && Objects.equals(properties, that.properties);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(tableIdentity, properties);
-  }
-
-  @Override
-  public String toString() {
-    return "OperationParameters{"
-        + "tableIdentity="
-        + tableIdentity
-        + ", properties="
-        + properties
-        + '}';
-  }
+  /**
+   * Gets the task type that these parameters support.
+   *
+   * @return the task type
+   */
+  public abstract TaskType getTaskType();
 }

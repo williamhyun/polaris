@@ -28,10 +28,11 @@ import java.util.Objects;
  * Common payload data included in all delegation tasks.
  *
  * <p>Contains global task information that applies to all task types within the delegation service.
+ * Uses the {@link TaskType} enum to ensure type safety for operation types.
  */
 public class CommonPayload {
 
-  @NotNull private final String operationType;
+  @NotNull private final TaskType taskType;
 
   @NotNull private final OffsetDateTime requestTimestampUtc;
 
@@ -39,17 +40,17 @@ public class CommonPayload {
 
   @JsonCreator
   public CommonPayload(
-      @JsonProperty("operation_type") @NotNull String operationType,
+      @JsonProperty("task_type") @NotNull TaskType taskType,
       @JsonProperty("request_timestamp_utc") @NotNull OffsetDateTime requestTimestampUtc,
       @JsonProperty("realm_identifier") @NotNull String realmIdentifier) {
-    this.operationType = operationType;
+    this.taskType = taskType;
     this.requestTimestampUtc = requestTimestampUtc;
     this.realmIdentifier = realmIdentifier;
   }
 
-  @JsonProperty("operation_type")
-  public String getOperationType() {
-    return operationType;
+  @JsonProperty("task_type")
+  public TaskType getTaskType() {
+    return taskType;
   }
 
   @JsonProperty("request_timestamp_utc")
@@ -67,22 +68,21 @@ public class CommonPayload {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     CommonPayload that = (CommonPayload) o;
-    return Objects.equals(operationType, that.operationType)
+    return Objects.equals(taskType, that.taskType)
         && Objects.equals(requestTimestampUtc, that.requestTimestampUtc)
         && Objects.equals(realmIdentifier, that.realmIdentifier);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(operationType, requestTimestampUtc, realmIdentifier);
+    return Objects.hash(taskType, requestTimestampUtc, realmIdentifier);
   }
 
   @Override
   public String toString() {
     return "CommonPayload{"
-        + "operationType='"
-        + operationType
-        + '\''
+        + "taskType="
+        + taskType
         + ", requestTimestampUtc="
         + requestTimestampUtc
         + ", realmIdentifier='"

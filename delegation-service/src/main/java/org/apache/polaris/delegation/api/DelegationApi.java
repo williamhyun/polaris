@@ -18,7 +18,6 @@
  */
 package org.apache.polaris.delegation.api;
 
-import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.ws.rs.Consumes;
@@ -28,7 +27,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.apache.polaris.delegation.api.model.TaskExecutionRequest;
-import org.apache.polaris.delegation.service.TaskExecutor;
+import org.apache.polaris.delegation.api.model.TaskExecutionResponse;
+import org.apache.polaris.delegation.api.model.TaskType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +38,9 @@ import org.slf4j.LoggerFactory;
  * <p>Provides endpoints for submitting long-running tasks for synchronous execution. This API
  * allows the main Polaris catalog to offload resource-intensive operations to maintain low-latency
  * performance.
+ *
+ * <p><strong>Note:</strong> This is the initial API framework implementation. The actual task
+ * execution logic will be implemented in future development phases.
  */
 @Path("/api/v1/tasks/execute")
 @Consumes(MediaType.APPLICATION_JSON)
@@ -46,17 +49,13 @@ public class DelegationApi {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(DelegationApi.class);
 
-  private final TaskExecutor taskExecutor;
-
-  @Inject
-  public DelegationApi(TaskExecutor taskExecutor) {
-    this.taskExecutor = taskExecutor;
-  }
-
   /**
    * Submit a task for delegated execution.
    *
    * <p>The task will be executed synchronously and the response will contain the execution result.
+   *
+   * <p><strong>Current Implementation:</strong> Returns a placeholder response to demonstrate the
+   * API contract. Actual task execution logic will be implemented in future development phases.
    *
    * @param request the task execution request
    * @return the task execution response with completion information
@@ -64,17 +63,23 @@ public class DelegationApi {
   @POST
   @Path("/synchronous")
   public Response submitTask(@Valid @NotNull TaskExecutionRequest request) {
-    String operationType = request.getCommonPayload().getOperationType();
+    TaskType taskType = request.getCommonPayload().getTaskType();
     String realmId = request.getCommonPayload().getRealmIdentifier();
-    LOGGER.info("Submitting task: operation_type={}, realm_id={}", operationType, realmId);
+    LOGGER.info("Delegation API called - task_type={}, realm_id={}", taskType, realmId);
 
     try {
-      var response = taskExecutor.executeTask(request);
+      // Placeholder response for API framework demonstration
+      // TODO: Implement actual task execution logic in future phases
+      TaskExecutionResponse response =
+          new TaskExecutionResponse("COMPLETED", "API framework operational - task acknowledged");
+
+      LOGGER.info("Returning placeholder response for task_type={}", taskType);
       return Response.ok(response).build();
+
     } catch (Exception e) {
-      LOGGER.error("Failed to execute task", e);
+      LOGGER.error("Failed to process task request", e);
       return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-          .entity(new ErrorResponse("Task execution failed: " + e.getMessage()))
+          .entity(new ErrorResponse("Task processing failed: " + e.getMessage()))
           .build();
     }
   }
