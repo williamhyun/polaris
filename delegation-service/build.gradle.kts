@@ -22,3 +22,32 @@ import org.gradle.api.tasks.compile.JavaCompile
 plugins { id("polaris-java") }
 
 tasks.withType(JavaCompile::class.java).configureEach { options.release = 21 }
+
+dependencies {
+  // Core dependencies
+  implementation(project(":polaris-core"))
+
+  // JAX-RS and REST APIs
+  implementation(libs.jakarta.ws.rs.api)
+  implementation(libs.jakarta.inject.api)
+  implementation(libs.jakarta.validation.api)
+  implementation(libs.jakarta.enterprise.cdi.api)
+
+  // JSON processing
+  implementation(platform(libs.jackson.bom))
+  implementation("com.fasterxml.jackson.core:jackson-core")
+  implementation("com.fasterxml.jackson.core:jackson-databind")
+  implementation("com.fasterxml.jackson.core:jackson-annotations")
+
+  // Logging
+  implementation(libs.slf4j.api)
+
+  // Testing
+  testImplementation(platform(libs.junit.bom))
+  testImplementation("org.junit.jupiter:junit-jupiter")
+  testImplementation(libs.mockito.core)
+  testImplementation(libs.assertj.core)
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+  testImplementation(libs.logback.classic)
+}
