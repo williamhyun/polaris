@@ -30,7 +30,9 @@ import jakarta.annotation.Nullable;
 import jakarta.ws.rs.core.SecurityContext;
 import java.io.Closeable;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.Arrays;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -140,6 +142,9 @@ import org.apache.polaris.service.types.NotificationRequest;
 import org.apache.polaris.service.types.NotificationType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.polaris.service.config.DelegationServiceConfiguration;
+import org.apache.polaris.service.delegation.DelegationClient;
+import org.apache.polaris.service.delegation.DelegationClientImpl;
 
 /** Defines the relationship between PolarisEntities and Iceberg's business logic. */
 public class IcebergCatalog extends BaseMetastoreViewCatalog
@@ -400,12 +405,43 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
 
   @Override
   public boolean dropTable(TableIdentifier tableIdentifier, boolean purge) {
+    LOGGER.info("🗑️ DROP TABLE called: table={}, purge={}", tableIdentifier, purge);
+    
+    // Debug: Check if DROP_WITH_PURGE_ENABLED is actually configured
+    boolean dropWithPurgeEnabled = callContext
+        .getPolarisCallContext()
+        .getConfigurationStore()
+        .getConfiguration(
+            callContext.getRealmContext(),
+            catalogEntity,
+            FeatureConfiguration.DROP_WITH_PURGE_ENABLED);
+    LOGGER.info("🔧 DROP_WITH_PURGE_ENABLED configuration: {}", dropWithPurgeEnabled);
+    
     TableOperations ops = newTableOps(tableIdentifier);
     TableMetadata lastMetadata;
     if (purge && ops.current() != null) {
       lastMetadata = ops.current();
     } else {
       lastMetadata = null;
+    }
+
+    LOGGER.info("📋 Table metadata: exists={}, purge={}", (lastMetadata != null), purge);
+
+    // Check if delegation service can handle the data file cleanup
+    if (purge && lastMetadata != null) {
+      LOGGER.info("🚀 ATTEMPTING DELEGATION for table {} to delegation service", tableIdentifier);
+      boolean dataCleanupCompleted = attemptDelegatedDataCleanup(tableIdentifier, lastMetadata);
+      if (dataCleanupCompleted) {
+        // In here, the Delegation service has completed data file cleanup synchronously
+        LOGGER.info("✅ DELEGATION COMPLETED data cleanup for table {}, now removing metadata from catalog", tableIdentifier);
+        DropEntityResult dropEntityResult = dropTableLike(
+            PolarisEntitySubType.ICEBERG_TABLE, tableIdentifier, Map.of(), false); // purge=false since data already cleaned
+        return dropEntityResult.isSuccess();
+      }
+      // If delegation disabled or failed, continue with normal local purge
+      LOGGER.info("❌ DELEGATION not available or failed for table {}, falling back to local purge", tableIdentifier);
+    } else {
+      LOGGER.info("⏭️ SKIPPING DELEGATION: purge={}, lastMetadata={}", purge, (lastMetadata != null));
     }
 
     Optional<PolarisEntity> storageInfoEntity = findStorageInfo(tableIdentifier);
@@ -450,6 +486,101 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
     }
 
     return true;
+  }
+
+  /**
+   * Attempts to delegate the data file cleanup to the delegation service.
+   * Returns true if data cleanup delegation was successful, false if delegation is disabled or failed.
+   * NOTE: This only handles data file deletion - metadata removal is still handled by Polaris.
+   */
+  private boolean attemptDelegatedDataCleanup(TableIdentifier tableIdentifier, TableMetadata tableMetadata) {
+    LOGGER.info("🔧 Creating delegation client...");
+    DelegationClient delegationClient = createDelegationClient();
+    
+    LOGGER.info("📦 Getting storage properties for delegation...");
+    Map<String, String> storageProperties = getStoragePropertiesForDelegation(tableIdentifier, tableMetadata);
+    
+    LOGGER.info("📡 Calling delegationClient.delegatePurge()...");
+    // Attempt data file cleanup delegation - delegation service handles only data file deletion
+    boolean result = delegationClient.delegatePurge(
+        tableIdentifier,
+        tableMetadata,
+        storageProperties,
+        callContext);
+    
+    LOGGER.info("📊 Delegation result: {}", result);
+    return result;
+  }
+
+  /**
+   * Creates a delegation client for communicating with the delegation service.
+   * Configuration is loaded from system properties and environment variables.
+   */
+  private DelegationClient createDelegationClient() {
+    LOGGER.info("🔧 Creating DelegationServiceConfiguration...");
+    DelegationServiceConfiguration config = new DelegationServiceConfiguration();
+    
+    // Load configuration from external sources (system properties, environment variables)
+    // Default values are already set in DelegationServiceConfiguration class
+    
+    // Enable/disable delegation service
+    String enabledProp = System.getProperty("polaris.delegation.enabled", 
+        System.getenv().getOrDefault("POLARIS_DELEGATION_ENABLED", "false"));
+    config.setEnabled(Boolean.parseBoolean(enabledProp));
+    LOGGER.info("🔧 Delegation enabled: {} (from property: {})", config.isEnabled(), enabledProp);
+    
+    // Base URL for delegation service
+    String baseUrlProp = System.getProperty("polaris.delegation.baseUrl",
+        System.getenv().getOrDefault("POLARIS_DELEGATION_BASE_URL", config.getBaseUrl()));
+    config.setBaseUrl(baseUrlProp);
+    LOGGER.info("🔧 Delegation baseUrl: {} (from property: {})", config.getBaseUrl(), baseUrlProp);
+    
+    // Request timeout in seconds
+    String timeoutProp = System.getProperty("polaris.delegation.timeoutSeconds",
+        System.getenv().getOrDefault("POLARIS_DELEGATION_TIMEOUT_SECONDS", String.valueOf(config.getTimeoutSeconds())));
+    config.setTimeoutSeconds(Integer.parseInt(timeoutProp));
+    
+    // Maximum retry attempts
+    String retriesProp = System.getProperty("polaris.delegation.maxRetries",
+        System.getenv().getOrDefault("POLARIS_DELEGATION_MAX_RETRIES", String.valueOf(config.getMaxRetries())));
+    config.setMaxRetries(Integer.parseInt(retriesProp));
+    
+    LOGGER.info("🔧 Final delegation config: enabled={}, baseUrl={}, timeout={}s, maxRetries={}", 
+        config.isEnabled(), config.getBaseUrl(), config.getTimeoutSeconds(), config.getMaxRetries());
+    
+    // Configure ObjectMapper to handle Java 8 time types (like OffsetDateTime)
+    com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+    objectMapper.findAndRegisterModules(); // This registers JSR310 module for Java 8 time types
+    
+    return new DelegationClientImpl(
+        java.net.http.HttpClient.newHttpClient(),
+        objectMapper,
+        config);
+  }
+
+  /**
+   * Extracts storage properties needed for delegation from table metadata and storage info.
+   */
+  private Map<String, String> getStoragePropertiesForDelegation(
+      TableIdentifier tableIdentifier, TableMetadata tableMetadata) {
+    
+    Optional<PolarisEntity> storageInfoEntity = findStorageInfo(tableIdentifier);
+    
+    Map<String, String> delegationProperties = new HashMap<>();
+    
+    // Add table properties
+    delegationProperties.putAll(tableMetadata.properties());
+    
+    // Add storage integration properties
+    storageInfoEntity
+        .map(PolarisEntity::getInternalPropertiesAsMap)
+        .ifPresent(delegationProperties::putAll);
+    
+    // Add required delegation properties
+    delegationProperties.put(CatalogProperties.FILE_IO_IMPL, ioImplClassName);
+    delegationProperties.put(PolarisTaskConstants.STORAGE_LOCATION, tableMetadata.location());
+    
+    return delegationProperties;
   }
 
   @Override

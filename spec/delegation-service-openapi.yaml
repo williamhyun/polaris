@@ -1,0 +1,322 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+#
+
+---
+openapi: 3.1.1
+info:
+  title: Apache Polaris Delegation Service API
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  version: 0.0.1
+  description: |
+    Defines the specification for the Polaris Delegation Service REST API.
+    
+    The Delegation Service handles long-running tasks offloaded from the main Polaris catalog
+    to maintain low-latency performance. This initial version supports synchronous task execution
+    for operations like table purging.
+
+servers:
+  - url: "{scheme}://{host}:{port}"
+    description: Delegation Service endpoint
+    variables:
+      scheme:
+        description: The scheme of the URI, either http or https.
+        default: https
+      host:
+        description: The host address for the delegation service
+        default: localhost
+      port:
+        description: The port used when addressing the host
+        default: "8080"
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/v1/tasks/execute/synchronous:
+    post:
+      tags:
+        - Task Execution API
+      summary: Execute a task synchronously
+      operationId: executeTaskSynchronously
+      description: |
+        Submit a task for synchronous execution by the delegation service.
+        
+        The task will be executed immediately and the response will contain
+        the execution result. This endpoint is designed for tasks that can
+        complete within a reasonable time frame.
+        
+        **Current Implementation:** Returns a placeholder response to demonstrate
+        the API contracts. Actual task execution logic will be implemented in
+        future development phases.
+        
+        ## Supported Task Types
+        - `PURGE_TABLE` - Table data file purging operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskExecutionRequest'
+            example:
+              common_payload:
+                task_type: "PURGE_TABLE"
+                request_timestamp_utc: "2025-01-15T10:30:00Z"
+                realm_identifier: "prod_us_west"
+              operation_parameters:
+                task_type: "PURGE_TABLE"
+                table_identity:
+                  catalog_name: "prod_catalog"
+                  namespace_levels: ["NS1", "NESTED1"]
+                  table_name: "T1"
+                properties:
+                  skipTrash: "true"
+                  deleteMarkerFiles: "false"
+      responses:
+        200:
+          description: Task executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskExecutionResponse'
+              example:
+                status: "COMPLETED"
+                result_summary: "API framework operational - task acknowledged"
+        400:
+          $ref: '#/components/responses/BadRequestErrorResponse'
+        401:
+          $ref: '#/components/responses/UnauthorizedResponse'
+        403:
+          $ref: '#/components/responses/ForbiddenResponse'
+        500:
+          $ref: '#/components/responses/ServerErrorResponse'
+
+components:
+  schemas:
+    TaskExecutionRequest:
+      type: object
+      required:
+        - common_payload
+        - operation_parameters
+      properties:
+        common_payload:
+          $ref: '#/components/schemas/CommonPayload'
+        operation_parameters:
+          $ref: '#/components/schemas/OperationParameters'
+      description: |
+        Request to execute a delegated task synchronously.
+        
+        Contains structured payload data following the delegation service
+        task schema specification with polymorphic operation parameters.
+
+    CommonPayload:
+      type: object
+      required:
+        - task_type
+        - request_timestamp_utc
+        - realm_identifier
+      properties:
+        task_type:
+          $ref: '#/components/schemas/TaskType'
+        request_timestamp_utc:
+          type: string
+          format: date-time
+          description: Timestamp when the task was submitted to the Delegation Service
+          example: "2025-01-15T10:30:00Z"
+        realm_identifier:
+          type: string
+          description: The identifier of the Polaris realm that this task originated from
+          example: "prod_us_west"
+      description: |
+        Common payload data included in all delegation tasks.
+        
+        Contains global task information that applies to all task types.
+
+    TaskType:
+      type: string
+      description: Types of tasks that can be delegated to the Delegation Service
+      enum:
+        - PURGE_TABLE
+      example: "PURGE_TABLE"
+
+    OperationParameters:
+      type: object
+      description: |
+        Base type for operation-specific parameters in delegation tasks.
+        
+        Uses polymorphic design to provide type-safe contracts for different
+        operation types. The actual structure depends on the task_type.
+      discriminator:
+        propertyName: task_type
+        mapping:
+          PURGE_TABLE: '#/components/schemas/TablePurgeParameters'
+      required:
+        - task_type
+      properties:
+        task_type:
+          $ref: '#/components/schemas/TaskType'
+      oneOf:
+        - $ref: '#/components/schemas/TablePurgeParameters'
+
+    TablePurgeParameters:
+      allOf:
+        - $ref: '#/components/schemas/OperationParameters'
+        - type: object
+          required:
+            - table_identity
+          properties:
+            table_identity:
+              $ref: '#/components/schemas/TableIdentity'
+            properties:
+              type: object
+              additionalProperties:
+                type: string
+              description: |
+                A map of key-value pairs providing specific instructions for the table purge operation.
+                
+                Common properties:
+                - `skipTrash`: "true" to bypass trash/recycling and delete immediately
+                - `deleteMarkerFiles`: "true" to also delete marker/metadata files
+                - `batchSize`: Number of files to process in each batch
+              example:
+                skipTrash: "true"
+                deleteMarkerFiles: "false"
+                batchSize: "1000"
+      description: |
+        Operation parameters for table purge operations.
+        
+        Contains all information needed to perform table data file deletion,
+        including table identity and purge-specific configuration.
+
+    TableIdentity:
+      type: object
+      required:
+        - catalog_name
+        - namespace_levels
+        - table_name
+      properties:
+        catalog_name:
+          type: string
+          description: The name of the Polaris Catalog the table belonged to
+          example: "prod_catalog"
+        namespace_levels:
+          type: array
+          items:
+            type: string
+          description: An ordered list of namespace levels leading to the table
+          example: ["NS1", "NESTED1"]
+        table_name:
+          type: string
+          description: The name of the table
+          example: "T1"
+      description: |
+        Table identity information for delegation tasks.
+        
+        Provides the complete hierarchical path to identify a table within
+        the Polaris catalog system.
+
+    TaskExecutionResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          description: Status of the task execution
+          enum:
+            - COMPLETED
+            - FAILED
+          example: "COMPLETED"
+        result_summary:
+          type: string
+          description: |
+            Summary of the execution result.
+            
+            For successful executions, contains a success message.
+            For failed executions, contains error details for troubleshooting.
+            
+            **Current Implementation:** Contains placeholder messages demonstrating
+            the API framework functionality.
+          example: "API framework operational - task acknowledged"
+      description: |
+        Response from executing a delegated task synchronously.
+        
+        Contains the execution status and result summary.
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Task processing failed: Invalid task type"
+      description: Simple error response model for API errors.
+
+  responses:
+    BadRequestErrorResponse:
+      description: |
+        Bad Request - The request was malformed or contained invalid parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Invalid request: missing required field 'task_type'"
+
+    UnauthorizedResponse:
+      description: |
+        Unauthorized - Authentication is required and has failed or has not been provided.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Authentication required"
+
+    ForbiddenResponse:
+      description: |
+        Forbidden - The authenticated user does not have permission to perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Insufficient permissions for task execution"
+
+    ServerErrorResponse:
+      description: |
+        Internal Server Error - An unexpected server-side error occurred.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            message: "Internal server error occurred during task processing"
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer token authentication for accessing the Delegation Service API.
+        
+        Include the token in the Authorization header: `Authorization: Bearer <token>` 

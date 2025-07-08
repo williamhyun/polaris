@@ -18,6 +18,7 @@
  */
 package org.apache.polaris.delegation.api;
 
+import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.ws.rs.Consumes;
@@ -29,6 +30,7 @@ import jakarta.ws.rs.core.Response;
 import org.apache.polaris.delegation.api.model.TaskExecutionRequest;
 import org.apache.polaris.delegation.api.model.TaskExecutionResponse;
 import org.apache.polaris.delegation.api.model.TaskType;
+import org.apache.polaris.delegation.service.TaskExecutionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,13 +51,13 @@ public class DelegationApi {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(DelegationApi.class);
 
+  @Inject private TaskExecutionService taskExecutionService;
+
   /**
    * Submit a task for delegated execution.
    *
    * <p>The task will be executed synchronously and the response will contain the execution result.
-   *
-   * <p><strong>Current Implementation:</strong> Returns a placeholder response to demonstrate the
-   * API contract. Actual task execution logic will be implemented in future development phases.
+   * This is a blocking operation that will wait for the task to complete before returning.
    *
    * @param request the task execution request
    * @return the task execution response with completion information
@@ -68,12 +70,11 @@ public class DelegationApi {
     LOGGER.info("Delegation API called - task_type={}, realm_id={}", taskType, realmId);
 
     try {
-      // Placeholder response for API framework demonstration
-      // TODO: Implement actual task execution logic in future phases
-      TaskExecutionResponse response =
-          new TaskExecutionResponse("COMPLETED", "API framework operational - task acknowledged");
+      // Execute the task synchronously using the TaskExecutionService
+      TaskExecutionResponse response = taskExecutionService.executeTask(request);
 
-      LOGGER.info("Returning placeholder response for task_type={}", taskType);
+      LOGGER.info(
+          "Task execution completed - task_type={}, status={}", taskType, response.getStatus());
       return Response.ok(response).build();
 
     } catch (Exception e) {

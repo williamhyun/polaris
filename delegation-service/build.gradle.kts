@@ -19,9 +19,14 @@
 
 import org.gradle.api.tasks.compile.JavaCompile
 
-plugins { id("polaris-java") }
+plugins {
+  id("polaris-java")
+  application
+}
 
 tasks.withType(JavaCompile::class.java).configureEach { options.release = 21 }
+
+application { mainClass.set("org.apache.polaris.delegation.DelegationServiceApplication") }
 
 dependencies {
   // Core dependencies
@@ -39,8 +44,23 @@ dependencies {
   implementation("com.fasterxml.jackson.core:jackson-databind")
   implementation("com.fasterxml.jackson.core:jackson-annotations")
 
+  // Iceberg for file operations
+  implementation(platform(libs.iceberg.bom))
+  implementation("org.apache.iceberg:iceberg-core")
+  implementation("org.apache.iceberg:iceberg-api")
+  implementation("org.apache.iceberg:iceberg-common")
+
+  // Storage backends
+  implementation("org.apache.iceberg:iceberg-aws") // S3 support
+  implementation("org.apache.iceberg:iceberg-azure") // Azure support
+  implementation("org.apache.iceberg:iceberg-gcp") // GCP support
+
+  // Hadoop dependency for FileIO operations
+  implementation(libs.hadoop.common)
+
   // Logging
   implementation(libs.slf4j.api)
+  implementation(libs.logback.classic)
 
   // Testing
   testImplementation(platform(libs.junit.bom))
@@ -48,6 +68,4 @@ dependencies {
   testImplementation(libs.mockito.core)
   testImplementation(libs.assertj.core)
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-
-  testImplementation(libs.logback.classic)
 }
