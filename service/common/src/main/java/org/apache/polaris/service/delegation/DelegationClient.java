@@ -68,13 +68,15 @@ public interface DelegationClient {
    * <p>NOTE: This only handles data file deletion from storage. Metadata removal from the 
    * catalog is still handled by Polaris after successful delegation.
    * 
-   * @param tableIdentifier the table to purge
-   * @param tableMetadata the table metadata for purge operation
+   * @param catalogName the name of the catalog
+   * @param tableIdentifier the identifier of the table to purge
+   * @param tableMetadata the metadata of the table to purge
    * @param storageProperties storage configuration properties
    * @param callContext the call context
    * @return true if delegation is enabled and data cleanup was COMPLETED successfully, false if delegation disabled or failed
    */
   boolean delegatePurge(
+      String catalogName,
       TableIdentifier tableIdentifier,
       TableMetadata tableMetadata,
       Map<String, String> storageProperties,

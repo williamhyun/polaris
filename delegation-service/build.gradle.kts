@@ -18,6 +18,8 @@
  */
 
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.api.tasks.bundling.Jar
+import org.gradle.api.file.DuplicatesStrategy
 
 plugins {
   id("polaris-java")
@@ -31,6 +33,7 @@ application { mainClass.set("org.apache.polaris.delegation.DelegationServiceAppl
 dependencies {
   // Core dependencies
   implementation(project(":polaris-core"))
+  implementation(project(":polaris-service-common"))
 
   // JAX-RS and REST APIs
   implementation(libs.jakarta.ws.rs.api)
@@ -43,6 +46,7 @@ dependencies {
   implementation("com.fasterxml.jackson.core:jackson-core")
   implementation("com.fasterxml.jackson.core:jackson-databind")
   implementation("com.fasterxml.jackson.core:jackson-annotations")
+  implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
   // Iceberg for file operations
   implementation(platform(libs.iceberg.bom))
@@ -68,4 +72,19 @@ dependencies {
   testImplementation(libs.mockito.core)
   testImplementation(libs.assertj.core)
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.register<Jar>("fatJar") {
+  archiveBaseName.set("polaris-delegation-service")
+  archiveClassifier.set("all")
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  manifest {
+    attributes["Main-Class"] = "org.apache.polaris.delegation.DelegationServiceApplication"
+  }
+  from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+  with(tasks.jar.get())
+}
+
+tasks.build {
+  dependsOn(tasks.named("fatJar"))
 }

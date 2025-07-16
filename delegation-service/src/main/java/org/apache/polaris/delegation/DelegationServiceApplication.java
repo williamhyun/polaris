@@ -18,11 +18,18 @@
  */
 package org.apache.polaris.delegation;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.ws.rs.ApplicationPath;
 import jakarta.ws.rs.core.Application;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import org.apache.polaris.delegation.api.DelegationApi;
+import org.apache.polaris.delegation.service.TaskExecutionService;
+import org.apache.polaris.delegation.service.storage.StorageFileManager;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionRequest;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,7 +70,7 @@ public class DelegationServiceApplication extends Application {
     // Get configuration from command line arguments first, then environment, then defaults
     String port = "8282";
     String host = "localhost";
-    
+
     // Parse command line arguments
     if (args.length > 0) {
       port = args[0];
@@ -71,7 +78,7 @@ public class DelegationServiceApplication extends Application {
       // Fallback to environment variables
       port = System.getenv().getOrDefault("POLARIS_DELEGATION_PORT", "8282");
     }
-    
+
     if (args.length > 1) {
       host = args[1];
     } else {
@@ -102,8 +109,21 @@ public class DelegationServiceApplication extends Application {
   private static void startEmbeddedServer(String host, int port) throws Exception {
     LOGGER.info("Starting embedded server for POC demonstration...");
 
-    // For POC, we'll create a simple HTTP server
-    // In production, this would be a proper JAX-RS deployment
+    // Create actual service instances
+    StorageFileManager storageFileManager = new StorageFileManager();
+    TaskExecutionService taskExecutionService = new TaskExecutionService();
+    ObjectMapper objectMapper = new ObjectMapper();
+
+    // Configure ObjectMapper to handle JSR310 date/time types
+    objectMapper.registerModule(new JavaTimeModule());
+    objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    // Manually inject dependencies (in production, this would be handled by CDI)
+    // Use reflection to set the private field
+    java.lang.reflect.Field field =
+        TaskExecutionService.class.getDeclaredField("storageFileManager");
+    field.setAccessible(true);
+    field.set(taskExecutionService, storageFileManager);
 
     // Create a simple HTTP server using Java's built-in HTTP server
     com.sun.net.httpserver.HttpServer server =
@@ -120,41 +140,64 @@ public class DelegationServiceApplication extends Application {
           exchange.close();
         });
 
-    // Create a simple context for the API (placeholder for POC)
+    // Create the actual API endpoint using the real implementation
     server.createContext(
         "/api/v1/tasks/execute/synchronous",
         exchange -> {
-          LOGGER.info("🔔 DELEGATION REQUEST RECEIVED!");
+          LOGGER.info("DELEGATION REQUEST RECEIVED!");
           LOGGER.info("   Method: {}", exchange.getRequestMethod());
           LOGGER.info("   URI: {}", exchange.getRequestURI());
           LOGGER.info("   Headers: {}", exchange.getRequestHeaders());
-          
+
           if (!"POST".equals(exchange.getRequestMethod())) {
-            LOGGER.warn("   ❌ Method not allowed: {}", exchange.getRequestMethod());
+            LOGGER.warn("   Method not allowed: {}", exchange.getRequestMethod());
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
             return;
           }
 
-          // Read request body
-          String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-          LOGGER.info("   Request body: {}", requestBody);
+          try {
+            // Read request body
+            String requestBody =
+                new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            LOGGER.info("   Request body: {}", requestBody);
 
-          // Simple response for POC
-          String response =
-              "{\"status\":\"success\",\"result_summary\":\"POC delegation service - task acknowledged\"}";
-          LOGGER.info("   ✅ Responding with: {}", response);
-          
-          exchange.getResponseHeaders().add("Content-Type", "application/json");
-          exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
-          exchange.getResponseBody().write(response.getBytes(StandardCharsets.UTF_8));
-          exchange.close();
+            // Parse request using Jackson
+            TaskExecutionRequest request =
+                objectMapper.readValue(requestBody, TaskExecutionRequest.class);
+
+            // Execute the task using the real implementation
+            TaskExecutionResponse response = taskExecutionService.executeTask(request);
+
+            // Serialize response to JSON
+            String responseJson = objectMapper.writeValueAsString(response);
+
+            LOGGER.info("   Task executed successfully. Response: {}", responseJson);
+
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, responseJson.getBytes(StandardCharsets.UTF_8).length);
+            exchange.getResponseBody().write(responseJson.getBytes(StandardCharsets.UTF_8));
+            exchange.close();
+
+          } catch (Exception e) {
+            LOGGER.error("   Error processing request", e);
+
+            String errorResponse =
+                "{\"status\":\"failed\",\"result_summary\":\"Error processing request: "
+                    + e.getMessage()
+                    + "\"}";
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(
+                500, errorResponse.getBytes(StandardCharsets.UTF_8).length);
+            exchange.getResponseBody().write(errorResponse.getBytes(StandardCharsets.UTF_8));
+            exchange.close();
+          }
         });
 
     // Start the server
     server.start();
 
-    LOGGER.info("🚀 Polaris Delegation Service started successfully!");
+    LOGGER.info("Polaris Delegation Service started successfully!");
     LOGGER.info("   Health check: http://{}:{}/health", host, port);
     LOGGER.info("   API endpoint: http://{}:{}/api/v1/tasks/execute/synchronous", host, port);
     LOGGER.info("   Press Ctrl+C to stop the service");

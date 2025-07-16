@@ -31,6 +31,12 @@ import java.time.OffsetDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import org.apache.polaris.service.delegation.api.model.CommonPayload;
+import org.apache.polaris.service.delegation.api.model.TableIdentity;
+import org.apache.polaris.service.delegation.api.model.TablePurgeParameters;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionRequest;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionResponse;
+import org.apache.polaris.service.delegation.api.model.TaskType;
 import java.util.function.Supplier;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -117,6 +123,7 @@ public class DelegationClientImpl implements DelegationClient {
 
   @Override
   public boolean delegatePurge(
+      String catalogName,
       TableIdentifier tableIdentifier,
       TableMetadata tableMetadata,
       Map<String, String> storageProperties,
@@ -133,6 +140,7 @@ public class DelegationClientImpl implements DelegationClient {
       // Send synchronous HTTP request to delegation service for data file cleanup
       // This call will BLOCK until delegation service completes the operation or fails
       boolean delegationSuccessful = delegateTablePurge(
+          catalogName,
           tableIdentifier, 
           storageProperties, 
           callContext);
@@ -155,6 +163,7 @@ public class DelegationClientImpl implements DelegationClient {
    * Delegates the actual purge operation to the delegation service.
    */
   private boolean delegateTablePurge(
+      String catalogName,
       TableIdentifier tableIdentifier,
       Map<String, String> storageProperties,
       CallContext callContext) throws DelegationException {
@@ -172,12 +181,12 @@ public class DelegationClientImpl implements DelegationClient {
 
       // Create table identity
       TableIdentity tableIdentity = new TableIdentity(
-          namespaceLevelsList.get(0), // catalog name
-          namespaceLevelsList.subList(1, namespaceLevelsList.size()), // namespace levels
+          catalogName,
+          Arrays.asList(tableIdentifier.namespace().levels()), // namespace levels
           tableIdentifier.name()); // table name
 
-      // Create operation parameters
-      TablePurgeParameters operationParameters = new TablePurgeParameters(tableIdentity, storageProperties);
+      // Create operation parameters but without passing credentials
+      TablePurgeParameters operationParameters = new TablePurgeParameters(tableIdentity);
 
       // Create request
       TaskExecutionRequest request = new TaskExecutionRequest(commonPayload, operationParameters);
@@ -270,8 +279,7 @@ public class DelegationClientImpl implements DelegationClient {
       throws DelegationException {
     try {
       // Read the table entity from the task
-      PolarisBaseEntity entity = task.readData(PolarisBaseEntity.class);
-      IcebergTableLikeEntity tableEntity = IcebergTableLikeEntity.of(entity);
+      IcebergTableLikeEntity tableEntity = task.readData(IcebergTableLikeEntity.class);
       if (tableEntity == null) {
         throw new DelegationException("Task does not contain table entity data");
       }
@@ -287,15 +295,12 @@ public class DelegationClientImpl implements DelegationClient {
       TableIdentifier tableId = tableEntity.getTableIdentifier();
       TableIdentity tableIdentity =
           new TableIdentity(
-              tableId.namespace().toString(), // This may need adjustment for multi-level namespaces
-              java.util.List.of(tableId.namespace().levels()),
+              tableId.namespace().level(0),
+              Arrays.asList(tableId.namespace().levels()).subList(1, tableId.namespace().length()),
               tableId.name());
 
-      // Get properties from task's internal properties
-      Map<String, String> properties = task.getInternalPropertiesAsMap();
-
       // Create operation parameters
-      TablePurgeParameters operationParameters = new TablePurgeParameters(tableIdentity, properties);
+      TablePurgeParameters operationParameters = new TablePurgeParameters(tableIdentity);
 
       return new TaskExecutionRequest(commonPayload, operationParameters);
 
@@ -304,82 +309,7 @@ public class DelegationClientImpl implements DelegationClient {
     }
   }
 
-  // Inner classes for API contracts (these would normally be imported from delegation service)
-  // For now, define them here to avoid dependency issues
 
-  public static class TaskExecutionRequest {
-    private final CommonPayload commonPayload;
-    private final TablePurgeParameters operationParameters;
 
-    public TaskExecutionRequest(CommonPayload commonPayload, TablePurgeParameters operationParameters) {
-      this.commonPayload = commonPayload;
-      this.operationParameters = operationParameters;
-    }
 
-    public CommonPayload getCommonPayload() { return commonPayload; }
-    public TablePurgeParameters getOperationParameters() { return operationParameters; }
-  }
-
-  public static class CommonPayload {
-    private final TaskType taskType;
-    private final OffsetDateTime requestTimestampUtc;
-    private final String realmIdentifier;
-
-    public CommonPayload(TaskType taskType, OffsetDateTime requestTimestampUtc, String realmIdentifier) {
-      this.taskType = taskType;
-      this.requestTimestampUtc = requestTimestampUtc;
-      this.realmIdentifier = realmIdentifier;
-    }
-
-    public TaskType getTaskType() { return taskType; }
-    public OffsetDateTime getRequestTimestampUtc() { return requestTimestampUtc; }
-    public String getRealmIdentifier() { return realmIdentifier; }
-  }
-
-  public static class TablePurgeParameters {
-    private final TableIdentity tableIdentity;
-    private final Map<String, String> properties;
-
-    public TablePurgeParameters(TableIdentity tableIdentity, Map<String, String> properties) {
-      this.tableIdentity = tableIdentity;
-      this.properties = properties;
-    }
-
-    public TableIdentity getTableIdentity() { return tableIdentity; }
-    public Map<String, String> getProperties() { return properties; }
-  }
-
-  public static class TableIdentity {
-    private final String catalogName;
-    private final java.util.List<String> namespaceLevels;
-    private final String tableName;
-
-    public TableIdentity(String catalogName, java.util.List<String> namespaceLevels, String tableName) {
-      this.catalogName = catalogName;
-      this.namespaceLevels = namespaceLevels;
-      this.tableName = tableName;
-    }
-
-    public String getCatalogName() { return catalogName; }
-    public java.util.List<String> getNamespaceLevels() { return namespaceLevels; }
-    public String getTableName() { return tableName; }
-  }
-
-  public static class TaskExecutionResponse {
-    private final String status;
-    private final String resultSummary;
-
-    @JsonCreator
-    public TaskExecutionResponse(@JsonProperty("status") String status, @JsonProperty("result_summary") String resultSummary) {
-      this.status = status;
-      this.resultSummary = resultSummary;
-    }
-
-    public String getStatus() { return status; }
-    public String getResultSummary() { return resultSummary; }
-  }
-
-  public enum TaskType {
-    PURGE_TABLE
-  }
 } 

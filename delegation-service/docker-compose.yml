@@ -52,12 +52,11 @@ services:
           -H 'Content-Type: application/json' \
           -d '{
             \"common_payload\": {
-              \"task_type\": \"PURGE_TABLE\",
+              \"operation_type\": \"TABLE_PURGE\",
               \"request_timestamp_utc\": \"2024-01-01T00:00:00Z\",
               \"realm_identifier\": \"test-realm\"
             },
             \"operation_parameters\": {
-              \"task_type\": \"PURGE_TABLE\",
               \"table_identity\": {
                 \"catalog_name\": \"test-catalog\",
                 \"namespace_levels\": [\"test-namespace\"],

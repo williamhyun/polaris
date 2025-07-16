@@ -405,7 +405,7 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
 
   @Override
   public boolean dropTable(TableIdentifier tableIdentifier, boolean purge) {
-    LOGGER.info("🗑️ DROP TABLE called: table={}, purge={}", tableIdentifier, purge);
+    LOGGER.info("DROP TABLE called: table={}, purge={}", tableIdentifier, purge);
     
     // Debug: Check if DROP_WITH_PURGE_ENABLED is actually configured
     boolean dropWithPurgeEnabled = callContext
@@ -415,7 +415,7 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
             callContext.getRealmContext(),
             catalogEntity,
             FeatureConfiguration.DROP_WITH_PURGE_ENABLED);
-    LOGGER.info("🔧 DROP_WITH_PURGE_ENABLED configuration: {}", dropWithPurgeEnabled);
+    LOGGER.info("DROP_WITH_PURGE_ENABLED configuration: {}", dropWithPurgeEnabled);
     
     TableOperations ops = newTableOps(tableIdentifier);
     TableMetadata lastMetadata;
@@ -425,23 +425,23 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
       lastMetadata = null;
     }
 
-    LOGGER.info("📋 Table metadata: exists={}, purge={}", (lastMetadata != null), purge);
+    LOGGER.info("Table metadata: exists={}, purge={}", (lastMetadata != null), purge);
 
     // Check if delegation service can handle the data file cleanup
     if (purge && lastMetadata != null) {
-      LOGGER.info("🚀 ATTEMPTING DELEGATION for table {} to delegation service", tableIdentifier);
+      LOGGER.info("ATTEMPTING DELEGATION for table {} to delegation service", tableIdentifier);
       boolean dataCleanupCompleted = attemptDelegatedDataCleanup(tableIdentifier, lastMetadata);
       if (dataCleanupCompleted) {
         // In here, the Delegation service has completed data file cleanup synchronously
-        LOGGER.info("✅ DELEGATION COMPLETED data cleanup for table {}, now removing metadata from catalog", tableIdentifier);
+        LOGGER.info("DELEGATION COMPLETED data cleanup for table {}, now removing metadata from catalog", tableIdentifier);
         DropEntityResult dropEntityResult = dropTableLike(
             PolarisEntitySubType.ICEBERG_TABLE, tableIdentifier, Map.of(), false); // purge=false since data already cleaned
         return dropEntityResult.isSuccess();
       }
       // If delegation disabled or failed, continue with normal local purge
-      LOGGER.info("❌ DELEGATION not available or failed for table {}, falling back to local purge", tableIdentifier);
+      LOGGER.info("DELEGATION not available or failed for table {}, falling back to local purge", tableIdentifier);
     } else {
-      LOGGER.info("⏭️ SKIPPING DELEGATION: purge={}, lastMetadata={}", purge, (lastMetadata != null));
+      LOGGER.info("SKIPPING DELEGATION: purge={}, lastMetadata={}", purge, (lastMetadata != null));
     }
 
     Optional<PolarisEntity> storageInfoEntity = findStorageInfo(tableIdentifier);
@@ -494,21 +494,22 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
    * NOTE: This only handles data file deletion - metadata removal is still handled by Polaris.
    */
   private boolean attemptDelegatedDataCleanup(TableIdentifier tableIdentifier, TableMetadata tableMetadata) {
-    LOGGER.info("🔧 Creating delegation client...");
+    LOGGER.info("Creating delegation client...");
     DelegationClient delegationClient = createDelegationClient();
     
-    LOGGER.info("📦 Getting storage properties for delegation...");
+    LOGGER.info("Getting storage properties for delegation...");
     Map<String, String> storageProperties = getStoragePropertiesForDelegation(tableIdentifier, tableMetadata);
     
-    LOGGER.info("📡 Calling delegationClient.delegatePurge()...");
+    LOGGER.info("Calling delegationClient.delegatePurge()...");
     // Attempt data file cleanup delegation - delegation service handles only data file deletion
     boolean result = delegationClient.delegatePurge(
+        name(),
         tableIdentifier,
         tableMetadata,
         storageProperties,
         callContext);
     
-    LOGGER.info("📊 Delegation result: {}", result);
+    LOGGER.info("Delegation result: {}", result);
     return result;
   }
 
@@ -517,7 +518,7 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
    * Configuration is loaded from system properties and environment variables.
    */
   private DelegationClient createDelegationClient() {
-    LOGGER.info("🔧 Creating DelegationServiceConfiguration...");
+    LOGGER.info("Creating DelegationServiceConfiguration...");
     DelegationServiceConfiguration config = new DelegationServiceConfiguration();
     
     // Load configuration from external sources (system properties, environment variables)
@@ -527,13 +528,13 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
     String enabledProp = System.getProperty("polaris.delegation.enabled", 
         System.getenv().getOrDefault("POLARIS_DELEGATION_ENABLED", "false"));
     config.setEnabled(Boolean.parseBoolean(enabledProp));
-    LOGGER.info("🔧 Delegation enabled: {} (from property: {})", config.isEnabled(), enabledProp);
+    LOGGER.info("Delegation enabled: {} (from property: {})", config.isEnabled(), enabledProp);
     
     // Base URL for delegation service
     String baseUrlProp = System.getProperty("polaris.delegation.baseUrl",
         System.getenv().getOrDefault("POLARIS_DELEGATION_BASE_URL", config.getBaseUrl()));
     config.setBaseUrl(baseUrlProp);
-    LOGGER.info("🔧 Delegation baseUrl: {} (from property: {})", config.getBaseUrl(), baseUrlProp);
+    LOGGER.info("Delegation baseUrl: {} (from property: {})", config.getBaseUrl(), baseUrlProp);
     
     // Request timeout in seconds
     String timeoutProp = System.getProperty("polaris.delegation.timeoutSeconds",
@@ -545,7 +546,7 @@ public class IcebergCatalog extends BaseMetastoreViewCatalog
         System.getenv().getOrDefault("POLARIS_DELEGATION_MAX_RETRIES", String.valueOf(config.getMaxRetries())));
     config.setMaxRetries(Integer.parseInt(retriesProp));
     
-    LOGGER.info("🔧 Final delegation config: enabled={}, baseUrl={}, timeout={}s, maxRetries={}", 
+    LOGGER.info("Final delegation config: enabled={}, baseUrl={}, timeout={}s, maxRetries={}", 
         config.isEnabled(), config.getBaseUrl(), config.getTimeoutSeconds(), config.getMaxRetries());
     
     // Configure ObjectMapper to handle Java 8 time types (like OffsetDateTime)

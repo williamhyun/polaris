@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.polaris.delegation.api.model;
+package org.apache.polaris.service.delegation.api.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
@@ -33,7 +33,7 @@ public enum TaskType {
    * Data file deletion task for DROP TABLE WITH PURGE operations. This is the initial task type
    * supported by the delegation service.
    */
-  PURGE_TABLE("PURGE_TABLE");
+  PURGE_TABLE("TABLE_PURGE");
 
   private final String value;
 

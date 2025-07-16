@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.polaris.delegation.api.model;
+package org.apache.polaris.service.delegation.api.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -56,9 +56,8 @@ public class TablePurgeParameters extends OperationParameters {
     this.properties = properties;
   }
 
-  @Override
-  public TaskType getTaskType() {
-    return TaskType.PURGE_TABLE;
+  public TablePurgeParameters(@NotNull TableIdentity tableIdentity) {
+    this(tableIdentity, null);
   }
 
   @JsonProperty("table_identity")

@@ -19,206 +19,275 @@
 
 # Polaris Delegation Service
 
-This module contains the Polaris Delegation Service, which handles long-running tasks delegated from the main Polaris catalog service.
+## Overview
 
-## 🎯 Overview
+The Polaris Delegation Service handles table cleanup operations (such as `DROP TABLE ... PURGE`) by authenticating with Polaris and using its `loadTable()` API to access table metadata and storage credentials. This approach provides better security and consistency compared to direct storage access.
 
-The Delegation Service is designed to:
-- Accept task execution requests from the main Polaris catalog
-- Execute long-running operations (e.g., table purging) **synchronously**
-- Maintain low-latency performance in the main catalog service
-- Provide scalable task execution capabilities
-
-## 🏗️ Architecture
-
-The service consists of:
-- **API Layer**: REST endpoints for task submission (`DelegationApi`)
-- **Service Layer**: Task execution logic and orchestration (`TaskExecutionService`)
-- **Storage Layer**: Data file cleanup operations (`StorageFileManager`)
-
-## 🚀 E2E POC Setup
+## Quick Start
 
 ### Prerequisites
-- Java 21
-- Docker & Docker Compose
-- Gradle
+- Java 11 or higher
+- `jq` command-line JSON processor
+- `curl` command-line tool
+- `lsof` command (for port checking)
 
-### 1. Build the Service
+### Setup Steps
+
+1. **Start Polaris with delegation enabled:**
+   ```bash
+   cd delegation-service
+   ./start-polaris-with-delegation.sh
+   ```
+
+2. **Set up delegation service principal** (in another terminal):
+   ```bash
+   cd delegation-service
+   ./setup-delegation-principal.sh
+   ```
+
+3. **Start the delegation service** (in another terminal):
+   ```bash
+   cd delegation-service  
+   ./start-delegation-service.sh
+   ```
+
+4. **Test the complete integration:**
+   ```bash
+   cd delegation-service
+   ./test-delegation-flow.sh
+   ```
+
+### Manual Testing Commands
+
+After setup, you can test individual components:
+
 ```bash
-cd delegation-service
-./gradlew build
+# Test Polaris health
+curl http://localhost:8181/q/health
+
+# Test delegation service health  
+curl http://localhost:8282/health
+
+# Get delegation service token
+curl -X POST http://localhost:8181/api/catalog/v1/oauth/tokens \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials&client_id=delegation-service&client_secret=delegation-secret-2024&scope=PRINCIPAL_ROLE:ALL"
+
+# Test table loading with delegation
+curl -X GET "http://localhost:8181/api/catalog/v1/namespaces/test_ns/tables/test_table" \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "X-Iceberg-Access-Delegation: vended-credentials"
 ```
 
-### 2. Run with Docker Compose
-```bash
-# Build and start the delegation service
-docker-compose up --build
+## Architecture
 
-# The service will be available at:
-# - Health check: http://localhost:8080/health
-# - API endpoint: http://localhost:8080/api/v1/tasks/execute/synchronous
+### New Architecture (Polaris API-based)
+```
+Polaris Server → Delegation Service → Polaris REST API → Storage
 ```
 
-### 3. Test the Integration
+**Benefits:**
+- **Security**: Delegation service doesn't need direct storage credentials
+- **Consistency**: Uses the same table metadata loading path as Polaris
+- **Authorization**: Proper permission checks through Polaris authentication
+- **Abstraction**: Delegation service doesn't need storage-specific configuration
 
-#### Start Delegation Service
+### Authentication Flow
+
+1. **Polaris Authentication**: Delegation service authenticates with Polaris using OAuth client credentials
+2. **Table Loading**: Uses Polaris's REST API to load table metadata with access delegation
+3. **Storage Credentials**: Receives temporary storage credentials from Polaris
+4. **File Operations**: Uses credentials to perform actual file deletion
+
+## Configuration
+
+### Delegation Service Principal
+
+The delegation service needs its own Polaris principal with appropriate permissions:
+
 ```bash
-# Terminal 1: Start delegation service
-docker-compose up delegation-service
-
-# Wait for: "🚀 Polaris Delegation Service started successfully!"
-```
-
-#### Test Polaris Integration
-```bash
-# Terminal 2: Configure Polaris to use delegation service
-export POLARIS_DELEGATION_ENABLED=true
-export POLARIS_DELEGATION_BASE_URL=http://localhost:8080
-export POLARIS_DELEGATION_TIMEOUT_SECONDS=30
-
-# Run Polaris with delegation enabled
-# (This would be your normal Polaris startup command)
-```
-
-#### Execute DROP TABLE WITH PURGE
-```bash
-# Terminal 3: Execute a table purge operation
-# This will now go through the delegation service
-
-# In your SQL client or API call:
-DROP TABLE test_table PURGE;
-```
-
-### 4. Manual API Testing
-```bash
-# Test health endpoint
-curl http://localhost:8080/health
-
-# Test delegation API
-curl -X POST http://localhost:8080/api/v1/tasks/execute/synchronous \
-  -H 'Content-Type: application/json' \
+# Create delegation service principal
+curl -X POST "http://localhost:8181/api/management/v1/principal-roles" \
+  -H "Authorization: Bearer $POLARIS_TOKEN" \
+  -H "Content-Type: application/json" \
   -d '{
-    "common_payload": {
-      "task_type": "PURGE_TABLE",
-      "request_timestamp_utc": "2024-01-01T00:00:00Z",
-      "realm_identifier": "test-realm"
-    },
-    "operation_parameters": {
-      "task_type": "PURGE_TABLE",
-      "table_identity": {
-        "catalog_name": "test-catalog",
-        "namespace_levels": ["test-namespace"],
-        "table_name": "test-table"
-      },
-      "properties": {
-        "POLARIS_STORAGE_LOCATION": "s3://test-bucket/test-table/"
-      }
-    }
+    "name": "delegation-service",
+    "properties": {}
+  }'
+
+# Grant necessary permissions for table access
+curl -X PUT "http://localhost:8181/api/management/v1/principal-roles/delegation-service/catalog-roles/catalog_name" \
+  -H "Authorization: Bearer $POLARIS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "catalog_admin"
   }'
 ```
 
-## 📋 Expected POC Flow
-
-1. **User**: `DROP TABLE test_table PURGE`
-2. **Polaris**: Checks delegation configuration
-3. **Delegation**: Polaris sends HTTP POST to delegation service
-4. **Delegation Service**: Executes data file cleanup (simulated)
-5. **Delegation Service**: Returns success response
-6. **Polaris**: Receives success → removes metadata from catalog
-7. **User**: Gets success response
-
-## 🔧 Configuration
-
-### Environment Variables
-- `POLARIS_DELEGATION_ENABLED`: Enable/disable delegation (default: false)
-- `POLARIS_DELEGATION_BASE_URL`: Delegation service URL (default: http://localhost:8080)
-- `POLARIS_DELEGATION_TIMEOUT_SECONDS`: Request timeout (default: 30)
-- `POLARIS_DELEGATION_PORT`: Service port (default: 8080)
-- `POLARIS_DELEGATION_HOST`: Service host (default: localhost)
-
 ### System Properties
-- `polaris.delegation.enabled`: Same as POLARIS_DELEGATION_ENABLED
-- `polaris.delegation.baseUrl`: Same as POLARIS_DELEGATION_BASE_URL
-- `polaris.delegation.timeoutSeconds`: Same as POLARIS_DELEGATION_TIMEOUT_SECONDS
 
-## 🏃 Running Standalone
+Configure the delegation service with these system properties:
 
 ```bash
-# Build the service
-./gradlew build
+# Polaris connection
+-Dpolaris.base.url=http://localhost:8181
 
-# Run directly
-java -jar build/libs/delegation-service-*.jar
-
-# Or with configuration
-export POLARIS_DELEGATION_PORT=8080
-java -jar build/libs/delegation-service-*.jar
+# Delegation service credentials
+-Dpolaris.delegation.client.id=delegation-service
+-Dpolaris.delegation.client.secret=delegation-secret
 ```
 
-## 📝 API Documentation
+### Environment Variables
 
-### POST /api/v1/tasks/execute/synchronous
-Executes a task synchronously and returns the result.
+Alternatively, you can use environment variables:
 
-**Request Body:**
+```bash
+export POLARIS_BASE_URL=http://localhost:8181
+export POLARIS_DELEGATION_CLIENT_ID=delegation-service
+export POLARIS_DELEGATION_CLIENT_SECRET=delegation-secret
+```
+
+## Usage
+
+### Start Polaris with Delegation Enabled
+
+```bash
+./gradlew :polaris-runtime-service:quarkusRun \
+  -Dpolaris.bootstrap.credentials=POLARIS,root,s3cr3t \
+  -Dpolaris.delegation.enabled=true
+```
+
+### Start Delegation Service
+
+```bash
+./gradlew :delegation-service:run --args="8282"
+```
+
+### Test Table Cleanup
+
+```bash
+# Create a test table
+curl -X POST "http://localhost:8181/api/catalog/v1/namespaces/test_ns/tables" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "test_table",
+    "location": "s3://bucket/path/to/table",
+    "schema": {"type": "struct", "fields": [{"id": 1, "name": "col1", "type": "string", "required": true}]}
+  }'
+
+# Drop table with purge (triggers delegation)
+curl -X DELETE "http://localhost:8181/api/catalog/v1/namespaces/test_ns/tables/test_table?purgeRequested=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+## Security Considerations
+
+### Permission Model
+
+The delegation service principal needs:
+- **READ access** to table metadata
+- **Storage delegation permissions** to receive temporary credentials
+- **Access to all catalogs** where cleanup might be needed
+
+### Credential Management
+
+- **Short-lived tokens**: Uses OAuth tokens with limited lifetime
+- **Scoped access**: Only gets credentials for specific table operations
+- **No persistent storage**: Credentials are temporary and not stored
+
+### Network Security
+
+- **TLS**: Use HTTPS for production deployments
+- **Network isolation**: Delegation service should only access Polaris
+- **Firewall rules**: Restrict delegation service network access
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Authentication failures**:
+   ```
+   Failed to authenticate with Polaris: 401 - Unauthorized
+   ```
+   - Check client ID and secret configuration
+   - Verify principal exists in Polaris
+
+2. **Permission errors**:
+   ```
+   Failed to load table from Polaris: 403 - Forbidden
+   ```
+   - Ensure delegation service principal has proper grants
+   - Check catalog-level permissions
+
+3. **Connection errors**:
+   ```
+   java.net.ConnectException: Connection refused
+   ```
+   - Verify Polaris is running on configured URL
+   - Check network connectivity
+
+### Debug Logging
+
+Enable debug logging to troubleshoot issues:
+
+```bash
+# Add to system properties
+-Dlogback.configurationFile=logback-debug.xml
+
+# Or set log level
+-Dorg.apache.polaris.delegation.service.storage.StorageFileManager=DEBUG
+```
+
+## API Reference
+
+### REST Endpoints Used
+
+- **Token endpoint**: `POST /api/catalog/v1/oauth/tokens`
+- **Load table**: `GET /api/catalog/v1/namespaces/{namespace}/tables/{table}`
+- **Headers**: `X-Iceberg-Access-Delegation: vended-credentials`
+
+### Response Format
+
 ```json
 {
-  "common_payload": {
-    "task_type": "PURGE_TABLE",
-    "request_timestamp_utc": "2024-01-01T00:00:00Z",
-    "realm_identifier": "test-realm"
+  "metadata": {
+    "format-version": 2,
+    "table-uuid": "uuid",
+    "location": "s3://bucket/path",
+    "snapshots": [...]
   },
-  "operation_parameters": {
-    "task_type": "PURGE_TABLE",
-    "table_identity": {
-      "catalog_name": "test-catalog",
-      "namespace_levels": ["test-namespace"],
-      "table_name": "test-table"
-    },
-    "properties": {
-      "POLARIS_STORAGE_LOCATION": "s3://test-bucket/test-table/"
-    }
+  "config": {
+    "s3.access-key-id": "temporary-key",
+    "s3.secret-access-key": "temporary-secret",
+    "s3.session-token": "temporary-token",
+    "io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
   }
 }
 ```
 
-**Response:**
-```json
-{
-  "status": "success",
-  "result_summary": "Successfully cleaned up 18 data files in 2000 ms"
-}
+## Development
+
+### Building
+
+```bash
+./gradlew :delegation-service:build
 ```
 
-### GET /health
-Health check endpoint.
+### Testing
 
-**Response:**
-```json
-{
-  "status": "healthy",
-  "service": "polaris-delegation-service"
-}
+```bash
+./gradlew :delegation-service:test
 ```
 
-## 🎯 POC Validation
+### Integration Testing
 
-The POC demonstrates:
-- ✅ **Polaris Integration**: Modified IcebergCatalog calls delegation service
-- ✅ **Synchronous Execution**: Blocking HTTP calls ensure proper timing
-- ✅ **Data/Metadata Separation**: Delegation handles data, Polaris handles metadata
-- ✅ **Configuration Management**: External configuration via environment variables
-- ✅ **Error Handling**: Graceful fallback to local execution
-- ✅ **Docker Deployment**: Easy containerized deployment
-- ✅ **API Contracts**: Well-defined REST API with proper serialization
+```bash
+# Start both services
+./gradlew :polaris-runtime-service:quarkusRun -Dpolaris.delegation.enabled=true &
+./gradlew :delegation-service:run --args="8282" &
 
-## 🚦 Current Status
-
-- **Integration**: ✅ Complete
-- **API Framework**: ✅ Complete
-- **Task Execution**: ✅ Simulated (POC)
-- **Storage Operations**: ✅ Simulated (POC)
-- **Docker Setup**: ✅ Complete
-- **Documentation**: ✅ Complete
-
-For production deployment, the simulated storage operations would be replaced with actual Iceberg file cleanup logic.
+# Run integration tests
+./gradlew :delegation-service:integrationTest
+```
+ 
