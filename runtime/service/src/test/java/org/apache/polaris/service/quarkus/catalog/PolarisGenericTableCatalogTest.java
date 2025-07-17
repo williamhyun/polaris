@@ -35,8 +35,6 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
-import org.apache.commons.lang3.NotImplementedException;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.catalog.Namespace;
@@ -61,11 +59,7 @@ import org.apache.polaris.core.entity.table.GenericTableEntity;
 import org.apache.polaris.core.persistence.MetaStoreManagerFactory;
 import org.apache.polaris.core.persistence.PolarisEntityManager;
 import org.apache.polaris.core.persistence.PolarisMetaStoreManager;
-import org.apache.polaris.core.persistence.bootstrap.RootCredentialsSet;
 import org.apache.polaris.core.persistence.cache.InMemoryEntityCache;
-import org.apache.polaris.core.persistence.dao.entity.BaseResult;
-import org.apache.polaris.core.persistence.dao.entity.PrincipalSecretsResult;
-import org.apache.polaris.core.persistence.transactional.TransactionalPersistence;
 import org.apache.polaris.core.secrets.UserSecretsManager;
 import org.apache.polaris.core.secrets.UserSecretsManagerFactory;
 import org.apache.polaris.core.storage.PolarisStorageIntegration;
@@ -73,6 +67,7 @@ import org.apache.polaris.core.storage.PolarisStorageIntegrationProvider;
 import org.apache.polaris.core.storage.aws.AwsCredentialsStorageIntegration;
 import org.apache.polaris.core.storage.aws.AwsStorageConfigurationInfo;
 import org.apache.polaris.core.storage.cache.StorageCredentialCache;
+import org.apache.polaris.core.storage.cache.StorageCredentialCacheConfig;
 import org.apache.polaris.service.admin.PolarisAdminService;
 import org.apache.polaris.service.catalog.PolarisPassthroughResolutionView;
 import org.apache.polaris.service.catalog.generic.PolarisGenericTableCatalog;
@@ -123,9 +118,10 @@ public class PolarisGenericTableCatalogTest {
   public static final String SECRET_ACCESS_KEY = "secret_access_key";
   public static final String SESSION_TOKEN = "session_token";
 
-  @Inject MetaStoreManagerFactory managerFactory;
+  @Inject MetaStoreManagerFactory metaStoreManagerFactory;
   @Inject UserSecretsManagerFactory userSecretsManagerFactory;
   @Inject PolarisConfigurationStore configurationStore;
+  @Inject StorageCredentialCacheConfig storageCredentialCacheConfig;
   @Inject PolarisStorageIntegrationProvider storageIntegrationProvider;
   @Inject PolarisDiagnostics diagServices;
 
@@ -165,20 +161,22 @@ public class PolarisGenericTableCatalogTest {
                 testInfo.getTestMethod().map(Method::getName).orElse("test"), System.nanoTime());
     RealmContext realmContext = () -> realmName;
     QuarkusMock.installMockForType(realmContext, RealmContext.class);
-    metaStoreManager = managerFactory.getOrCreateMetaStoreManager(realmContext);
+    metaStoreManager = metaStoreManagerFactory.getOrCreateMetaStoreManager(realmContext);
     userSecretsManager = userSecretsManagerFactory.getOrCreateUserSecretsManager(realmContext);
     polarisContext =
         new PolarisCallContext(
             realmContext,
-            managerFactory.getOrCreateSessionSupplier(realmContext).get(),
+            metaStoreManagerFactory.getOrCreateSessionSupplier(realmContext).get(),
             diagServices,
             configurationStore,
             Clock.systemDefaultZone());
+    StorageCredentialCache storageCredentialCache =
+        new StorageCredentialCache(storageCredentialCacheConfig);
     entityManager =
         new PolarisEntityManager(
             metaStoreManager,
-            new StorageCredentialCache(realmContext, configurationStore),
-            new InMemoryEntityCache(realmContext, configurationStore, metaStoreManager));
+            storageCredentialCache,
+            new InMemoryEntityCache(polarisContext.getRealmConfig(), metaStoreManager));
 
     PrincipalEntity rootEntity =
         new PrincipalEntity(
@@ -207,7 +205,7 @@ public class PolarisGenericTableCatalogTest {
             metaStoreManager,
             userSecretsManager,
             securityContext,
-            new PolarisAuthorizerImpl(new PolarisConfigurationStore() {}),
+            new PolarisAuthorizerImpl(),
             reservedProperties);
 
     String storageLocation = "s3://my-bucket/path/to/data";
@@ -243,9 +241,10 @@ public class PolarisGenericTableCatalogTest {
             polarisContext, entityManager, securityContext, CATALOG_NAME);
     TaskExecutor taskExecutor = Mockito.mock();
     RealmEntityManagerFactory realmEntityManagerFactory =
-        new RealmEntityManagerFactory(createMockMetaStoreManagerFactory());
+        new RealmEntityManagerFactory(
+            metaStoreManagerFactory, configurationStore, storageCredentialCache);
     this.fileIOFactory =
-        new DefaultFileIOFactory(realmEntityManagerFactory, managerFactory, configurationStore);
+        new DefaultFileIOFactory(realmEntityManagerFactory, metaStoreManagerFactory);
 
     StsClient stsClient = Mockito.mock(StsClient.class);
     when(stsClient.assumeRole(isA(AssumeRoleRequest.class)))
@@ -286,42 +285,6 @@ public class PolarisGenericTableCatalogTest {
   @AfterEach
   public void after() throws IOException {
     metaStoreManager.purge(polarisContext);
-  }
-
-  private MetaStoreManagerFactory createMockMetaStoreManagerFactory() {
-    return new MetaStoreManagerFactory() {
-      @Override
-      public PolarisMetaStoreManager getOrCreateMetaStoreManager(RealmContext realmContext) {
-        return metaStoreManager;
-      }
-
-      @Override
-      public Supplier<TransactionalPersistence> getOrCreateSessionSupplier(
-          RealmContext realmContext) {
-        return () -> ((TransactionalPersistence) polarisContext.getMetaStore());
-      }
-
-      @Override
-      public StorageCredentialCache getOrCreateStorageCredentialCache(RealmContext realmContext) {
-        return new StorageCredentialCache(realmContext, configurationStore);
-      }
-
-      @Override
-      public InMemoryEntityCache getOrCreateEntityCache(RealmContext realmContext) {
-        return new InMemoryEntityCache(realmContext, configurationStore, metaStoreManager);
-      }
-
-      @Override
-      public Map<String, PrincipalSecretsResult> bootstrapRealms(
-          Iterable<String> realms, RootCredentialsSet rootCredentialsSet) {
-        throw new NotImplementedException("Bootstrapping realms is not supported");
-      }
-
-      @Override
-      public Map<String, BaseResult> purgeRealms(Iterable<String> realms) {
-        throw new NotImplementedException("Purging realms is not supported");
-      }
-    };
   }
 
   @Test

@@ -35,6 +35,8 @@ logging:
 persistence:
   type: relational-jdbc
   relationalJdbc:
-    dbKind: postgres
     secret:
       name: polaris-persistence
+      username: username
+      password: password
+      jdbcUrl: jdbcUrl

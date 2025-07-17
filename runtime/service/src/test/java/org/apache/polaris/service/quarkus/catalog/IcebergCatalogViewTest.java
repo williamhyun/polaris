@@ -62,6 +62,7 @@ import org.apache.polaris.core.persistence.cache.InMemoryEntityCache;
 import org.apache.polaris.core.secrets.UserSecretsManager;
 import org.apache.polaris.core.secrets.UserSecretsManagerFactory;
 import org.apache.polaris.core.storage.cache.StorageCredentialCache;
+import org.apache.polaris.core.storage.cache.StorageCredentialCacheConfig;
 import org.apache.polaris.service.admin.PolarisAdminService;
 import org.apache.polaris.service.catalog.PolarisPassthroughResolutionView;
 import org.apache.polaris.service.catalog.iceberg.IcebergCatalog;
@@ -127,9 +128,10 @@ public class IcebergCatalogViewTest extends ViewCatalogTests<IcebergCatalog> {
           CatalogProperties.VIEW_OVERRIDE_PREFIX + "key3", "catalog-override-key3",
           CatalogProperties.VIEW_OVERRIDE_PREFIX + "key4", "catalog-override-key4");
 
-  @Inject MetaStoreManagerFactory managerFactory;
+  @Inject MetaStoreManagerFactory metaStoreManagerFactory;
   @Inject UserSecretsManagerFactory userSecretsManagerFactory;
   @Inject PolarisConfigurationStore configurationStore;
+  @Inject StorageCredentialCacheConfig storageCredentialCacheConfig;
   @Inject PolarisDiagnostics diagServices;
   @Inject PolarisEventListener polarisEventListener;
 
@@ -166,21 +168,23 @@ public class IcebergCatalogViewTest extends ViewCatalogTests<IcebergCatalog> {
     RealmContext realmContext = () -> realmName;
     QuarkusMock.installMockForType(realmContext, RealmContext.class);
 
-    metaStoreManager = managerFactory.getOrCreateMetaStoreManager(realmContext);
+    metaStoreManager = metaStoreManagerFactory.getOrCreateMetaStoreManager(realmContext);
     userSecretsManager = userSecretsManagerFactory.getOrCreateUserSecretsManager(realmContext);
     polarisContext =
         new PolarisCallContext(
             realmContext,
-            managerFactory.getOrCreateSessionSupplier(realmContext).get(),
+            metaStoreManagerFactory.getOrCreateSessionSupplier(realmContext).get(),
             diagServices,
             configurationStore,
             Clock.systemDefaultZone());
 
+    StorageCredentialCache storageCredentialCache =
+        new StorageCredentialCache(storageCredentialCacheConfig);
     PolarisEntityManager entityManager =
         new PolarisEntityManager(
             metaStoreManager,
-            new StorageCredentialCache(realmContext, configurationStore),
-            new InMemoryEntityCache(realmContext, configurationStore, metaStoreManager));
+            storageCredentialCache,
+            new InMemoryEntityCache(polarisContext.getRealmConfig(), metaStoreManager));
 
     CallContext.setCurrentContext(polarisContext);
 
@@ -211,7 +215,7 @@ public class IcebergCatalogViewTest extends ViewCatalogTests<IcebergCatalog> {
             metaStoreManager,
             userSecretsManager,
             securityContext,
-            new PolarisAuthorizerImpl(new PolarisConfigurationStore() {}),
+            new PolarisAuthorizerImpl(),
             reservedProperties);
     adminService.createCatalog(
         new CreateCatalogRequest(
@@ -234,9 +238,11 @@ public class IcebergCatalogViewTest extends ViewCatalogTests<IcebergCatalog> {
     PolarisPassthroughResolutionView passthroughView =
         new PolarisPassthroughResolutionView(
             polarisContext, entityManager, securityContext, CATALOG_NAME);
+    RealmEntityManagerFactory realmEntityManagerFactory =
+        new RealmEntityManagerFactory(
+            metaStoreManagerFactory, configurationStore, storageCredentialCache);
     FileIOFactory fileIOFactory =
-        new DefaultFileIOFactory(
-            new RealmEntityManagerFactory(managerFactory), managerFactory, configurationStore);
+        new DefaultFileIOFactory(realmEntityManagerFactory, metaStoreManagerFactory);
 
     testPolarisEventListener = (TestPolarisEventListener) polarisEventListener;
     this.catalog =

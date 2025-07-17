@@ -106,17 +106,8 @@ public class CatalogEntity extends PolarisEntity implements LocationBasedEntity 
         CatalogProperties.builder(propertiesMap.get(DEFAULT_BASE_LOCATION_KEY))
             .putAll(propertiesMap)
             .build();
-    return catalogType == Catalog.TypeEnum.INTERNAL
-        ? PolarisCatalog.builder()
-            .setType(Catalog.TypeEnum.INTERNAL)
-            .setName(getName())
-            .setProperties(catalogProps)
-            .setCreateTimestamp(getCreateTimestamp())
-            .setLastUpdateTimestamp(getLastUpdateTimestamp())
-            .setEntityVersion(getEntityVersion())
-            .setStorageConfigInfo(getStorageInfo(internalProperties))
-            .build()
-        : ExternalCatalog.builder()
+    return catalogType == Catalog.TypeEnum.EXTERNAL
+        ? ExternalCatalog.builder()
             .setType(Catalog.TypeEnum.EXTERNAL)
             .setName(getName())
             .setProperties(catalogProps)
@@ -125,6 +116,15 @@ public class CatalogEntity extends PolarisEntity implements LocationBasedEntity 
             .setEntityVersion(getEntityVersion())
             .setStorageConfigInfo(getStorageInfo(internalProperties))
             .setConnectionConfigInfo(getConnectionInfo(internalProperties))
+            .build()
+        : PolarisCatalog.builder()
+            .setType(Catalog.TypeEnum.INTERNAL)
+            .setName(getName())
+            .setProperties(catalogProps)
+            .setCreateTimestamp(getCreateTimestamp())
+            .setLastUpdateTimestamp(getLastUpdateTimestamp())
+            .setEntityVersion(getEntityVersion())
+            .setStorageConfigInfo(getStorageInfo(internalProperties))
             .build();
   }
 
@@ -140,6 +140,9 @@ public class CatalogEntity extends PolarisEntity implements LocationBasedEntity 
             .setStorageType(StorageConfigInfo.StorageTypeEnum.S3)
             .setAllowedLocations(awsConfig.getAllowedLocations())
             .setRegion(awsConfig.getRegion())
+            .setEndpoint(awsConfig.getEndpoint())
+            .setStsEndpoint(awsConfig.getStsEndpoint())
+            .setPathStyleAccess(awsConfig.getPathStyleAccess())
             .build();
       }
       if (configInfo instanceof AzureStorageConfigurationInfo) {
@@ -273,7 +276,10 @@ public class CatalogEntity extends PolarisEntity implements LocationBasedEntity 
                     new ArrayList<>(allowedLocations),
                     awsConfigModel.getRoleArn(),
                     awsConfigModel.getExternalId(),
-                    awsConfigModel.getRegion());
+                    awsConfigModel.getRegion(),
+                    awsConfigModel.getEndpoint(),
+                    awsConfigModel.getStsEndpoint(),
+                    awsConfigModel.getPathStyleAccess());
             awsConfig.validateArn(awsConfigModel.getRoleArn());
             config = awsConfig;
             break;
@@ -311,11 +317,8 @@ public class CatalogEntity extends PolarisEntity implements LocationBasedEntity 
         CallContext callContext, Collection<String> allowedLocations) {
       int maxAllowedLocations =
           callContext
-              .getPolarisCallContext()
-              .getConfigurationStore()
-              .getConfiguration(
-                  callContext.getRealmContext(),
-                  BehaviorChangeConfiguration.STORAGE_CONFIGURATION_MAX_LOCATIONS);
+              .getRealmConfig()
+              .getConfig(BehaviorChangeConfiguration.STORAGE_CONFIGURATION_MAX_LOCATIONS);
       if (maxAllowedLocations != -1 && allowedLocations.size() > maxAllowedLocations) {
         throw new IllegalArgumentException(
             String.format(

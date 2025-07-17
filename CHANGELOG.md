@@ -35,9 +35,24 @@ request adding CHANGELOG notes for breaking (!) changes and possibly other secti
 
 ### New Features
 
+- Added Catalog configuration for S3 and STS endpoints. This also allows using non-AWS S3 implementations.
+
+- The `IMPLICIT` authentication type enables users to create federated catalogs without explicitly
+providing authentication parameters to Polaris. When the authentication type is set to `IMPLICIT`, 
+the authentication parameters are picked from the environment or configuration files. 
+
+- The `DEFAULT_LOCATION_OBJECT_STORAGE_PREFIX_ENABLED` feature was added to support placing tables
+at locations that better optimize for object storage.
+
 ### Changes
 
+- Polaris Management API clients must be prepared to deal with new attributes in `AwsStorageConfigInfo` objects.
+
 ### Deprecations
+
+* The property `polaris.active-roles-provider.type` is deprecated in favor of
+  `polaris.authentication.active-roles-provider.type`. The old property is still supported, but will be removed in a
+  future release.
 
 ### Fixes
 
