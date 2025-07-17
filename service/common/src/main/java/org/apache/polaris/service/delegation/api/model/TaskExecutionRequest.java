@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.polaris.delegation.api.model;
+package org.apache.polaris.service.delegation.api.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -33,12 +33,12 @@ public class TaskExecutionRequest {
 
   @NotNull private final CommonPayload commonPayload;
 
-  @NotNull private final OperationParameters operationParameters;
+  @NotNull private final TablePurgeParameters operationParameters;
 
   @JsonCreator
   public TaskExecutionRequest(
       @JsonProperty("common_payload") @NotNull CommonPayload commonPayload,
-      @JsonProperty("operation_parameters") @NotNull OperationParameters operationParameters) {
+      @JsonProperty("operation_parameters") @NotNull TablePurgeParameters operationParameters) {
     this.commonPayload = commonPayload;
     this.operationParameters = operationParameters;
   }
@@ -49,7 +49,7 @@ public class TaskExecutionRequest {
   }
 
   @JsonProperty("operation_parameters")
-  public OperationParameters getOperationParameters() {
+  public TablePurgeParameters getOperationParameters() {
     return operationParameters;
   }
 

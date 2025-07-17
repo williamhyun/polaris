@@ -23,12 +23,12 @@ import jakarta.inject.Inject;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import org.apache.polaris.delegation.api.model.TableIdentity;
-import org.apache.polaris.delegation.api.model.TablePurgeParameters;
-import org.apache.polaris.delegation.api.model.TaskExecutionRequest;
-import org.apache.polaris.delegation.api.model.TaskExecutionResponse;
-import org.apache.polaris.delegation.api.model.TaskType;
 import org.apache.polaris.delegation.service.storage.StorageFileManager;
+import org.apache.polaris.service.delegation.api.model.TableIdentity;
+import org.apache.polaris.service.delegation.api.model.TablePurgeParameters;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionRequest;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionResponse;
+import org.apache.polaris.service.delegation.api.model.TaskType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -73,13 +73,9 @@ public class TaskExecutionService {
 
   /** Executes a table purge task by cleaning up data files. */
   private TaskExecutionResponse executePurgeTableTask(TaskExecutionRequest request) {
-    if (!(request.getOperationParameters() instanceof TablePurgeParameters)) {
-      return new TaskExecutionResponse("failed", "Invalid operation parameters for table purge");
-    }
-
-    TablePurgeParameters purgeParams = (TablePurgeParameters) request.getOperationParameters();
+    // No need to check instanceof since TaskExecutionRequest now uses TablePurgeParameters directly
+    TablePurgeParameters purgeParams = request.getOperationParameters();
     TableIdentity tableIdentity = purgeParams.getTableIdentity();
-    Map<String, String> storageProperties = purgeParams.getProperties();
 
     LOGGER.info(
         "Executing table purge for table: {}.{}.{}",
@@ -93,7 +89,7 @@ public class TaskExecutionService {
 
       // This is the core operation: delete data files from storage
       StorageFileManager.CleanupResult result =
-          storageFileManager.cleanupTableFiles(tableIdentity, storageProperties);
+          storageFileManager.cleanupTableFiles(tableIdentity);
 
       long duration = System.currentTimeMillis() - startTime;
 
@@ -133,3 +129,4 @@ public class TaskExecutionService {
             });
   }
 }
+ 

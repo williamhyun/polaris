@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.polaris.delegation.api.model;
+package org.apache.polaris.service.delegation.api.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -40,7 +40,7 @@ public class CommonPayload {
 
   @JsonCreator
   public CommonPayload(
-      @JsonProperty("task_type") @NotNull TaskType taskType,
+      @JsonProperty("operation_type") @NotNull TaskType taskType,
       @JsonProperty("request_timestamp_utc") @NotNull OffsetDateTime requestTimestampUtc,
       @JsonProperty("realm_identifier") @NotNull String realmIdentifier) {
     this.taskType = taskType;
@@ -48,7 +48,7 @@ public class CommonPayload {
     this.realmIdentifier = realmIdentifier;
   }
 
-  @JsonProperty("task_type")
+  @JsonProperty("operation_type")
   public TaskType getTaskType() {
     return taskType;
   }

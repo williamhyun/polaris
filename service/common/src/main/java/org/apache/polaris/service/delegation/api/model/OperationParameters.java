@@ -16,10 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.polaris.delegation.api.model;
+package org.apache.polaris.service.delegation.api.model;
 
-import com.fasterxml.jackson.annotation.JsonSubTypes;
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
 
 /**
  * Base class for operation-specific parameters in delegation tasks.
@@ -46,17 +45,6 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
  *   <li>Define the operation-specific fields and validation
  * </ol>
  */
-@JsonTypeInfo(
-    use = JsonTypeInfo.Id.NAME,
-    include = JsonTypeInfo.As.PROPERTY,
-    property = "task_type")
-@JsonSubTypes({@JsonSubTypes.Type(value = TablePurgeParameters.class, name = "PURGE_TABLE")})
 public abstract class OperationParameters {
-
-  /**
-   * Gets the task type that these parameters support.
-   *
-   * @return the task type
-   */
-  public abstract TaskType getTaskType();
+  // This class is now a marker class and does not contain any fields or methods.
 }

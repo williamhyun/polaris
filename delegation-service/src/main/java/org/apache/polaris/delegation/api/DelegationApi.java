@@ -27,10 +27,10 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.apache.polaris.delegation.api.model.TaskExecutionRequest;
-import org.apache.polaris.delegation.api.model.TaskExecutionResponse;
-import org.apache.polaris.delegation.api.model.TaskType;
 import org.apache.polaris.delegation.service.TaskExecutionService;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionRequest;
+import org.apache.polaris.service.delegation.api.model.TaskExecutionResponse;
+import org.apache.polaris.service.delegation.api.model.TaskType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
